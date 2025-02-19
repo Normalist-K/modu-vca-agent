@@ -40,6 +40,12 @@ dependencies = [
     "streamlit ~=1.40.1",
     "tiktoken >=0.8.0", # python 3.13 support
     "uvicorn ~=0.32.1",
+    "pipecat-ai ~=0.0.57",
+    "pipecat-ai[daily] ~=0.0.57",
+    "pipecat-ai[websocket] ~=0.0.57",
+    "pipecat-ai[whisper] ~=0.0.57",
+    "pipecat-ai[openai] ~=0.0.57",
+    "pipecat-ai[google] ~=0.0.57",
 ]
 
 [dependency-groups]
