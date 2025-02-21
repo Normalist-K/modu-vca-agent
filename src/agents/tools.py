@@ -38,3 +38,19 @@ def calculator_func(expression: str) -> str:
 
 calculator: BaseTool = tool(calculator_func)
 calculator.name = "Calculator"
+
+
+class ModuLabsNotionRetrieverTool(BaseTool):
+
+    name: str = "ModuLabsNotionRetrieverTool"
+    description: str = "Retrieves information from Notion using the ModuLabs API."
+
+    def __init__(self, **kwargs):
+        from langchain_community.document_loaders import NotionDirectoryLoader
+        super().__init__(**kwargs)
+
+    def _run(self, *args, **kwargs):
+        return super()._run(*args, **kwargs)
+
+    def _arun(self, *args, **kwargs):
+        return super()._arun(*args, **kwargs)
