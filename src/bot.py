@@ -35,6 +35,9 @@ from pipecat.frames.frames import (
     LLMFullResponseEndFrame,
 )
 
+# custom services
+import aiohttp
+from pipecat_service.tts_service import StyleTTS2Service
 
 class TranscriptionLogger(FrameProcessor):
 
@@ -106,74 +109,86 @@ class SessionTimeoutHandler:
 
 
 async def main():
-    transport = WebsocketServerTransport(
-        params=WebsocketServerParams(
-            serializer=ProtobufFrameSerializer(),
-            audio_out_enabled=True,
-            add_wav_header=True,
-            vad_enabled=True,
-            vad_analyzer=SileroVADAnalyzer(),
-            vad_audio_passthrough=True,
-            session_timeout=60 * 3,  # 3 minutes
+    async with aiohttp.ClientSession() as session:
+
+        transport = WebsocketServerTransport(
+            params=WebsocketServerParams(
+                # audio_out_sample_rate=24000,
+                serializer=ProtobufFrameSerializer(),
+                audio_out_enabled=True,
+                add_wav_header=True,
+                vad_enabled=True,
+                vad_analyzer=SileroVADAnalyzer(),
+                vad_audio_passthrough=True,
+                session_timeout=60 * 3,  # 3 minutes
+            )
         )
-    )
 
-    # llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
-    llm = OLLamaLLMService(model="llama3.3:70b", base_url="http://localhost:5005/v1")
+        # llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
+        llm = OLLamaLLMService(model="llama3.3:70b", base_url="http://localhost:5005/v1")
 
-    # stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
-    stt = WhisperSTTService(model=Model.DISTIL_MEDIUM_EN)
+        # stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
+        stt = WhisperSTTService(
+            model=Model.DISTIL_MEDIUM_EN,
+            audio_passthrough=True
+            )
 
-    # tts = XTTSService(
-    #     voice_id="speaker_1",
-    #     language=Language.EN,
-    #     base_url="http://localhost:5006",
-    #     aiohttp_session=session,
-    # )
-    tl = TranscriptionLogger()
+        # tts = XTTSService(
+        #     voice_id="speaker_1",
+        #     language=Language.EN,
+        #     base_url="http://localhost:5006",
+        #     aiohttp_session=session,
+        # )
 
-    messages = [
-        {
-            "role": "system",
-            "content": "You are a helpful LLM in a WebRTC call. Your goal is to demonstrate your capabilities in a succinct way. Your output will be converted to audio so don't include special characters in your answers. Respond to what the user said in a creative and helpful way.",
-        },
-    ]
+        tts = StyleTTS2Service(
+            base_url='http://localhost:8014',
+            aiohttp_session=session,
+            sample_rate=24000,
+        )
+        tl = TranscriptionLogger()
 
-    context = OpenAILLMContext(messages)
-    context_aggregator = OpenAILLMService.create_context_aggregator(context)
-
-    pipeline = Pipeline(
-        [
-            transport.input(),  # Websocket input from client
-            stt,  # Speech-To-Text
-            context_aggregator.user(),
-            llm,  # LLM
-            # tts,  # Text-To-Speech
-            # transport.output(),  # Websocket output to client
-            tl,
-            context_aggregator.assistant(),
+        messages = [
+            {
+                "role": "system",
+                "content": "You are a helpful LLM in a WebRTC call. Your goal is to demonstrate your capabilities in a succinct way. Your output will be converted to audio so don't include special characters in your answers. Respond to what the user said in a creative and helpful way.",
+            },
         ]
-    )
 
-    task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
+        context = OpenAILLMContext(messages)
+        context_aggregator = OpenAILLMService.create_context_aggregator(context)
 
-    @transport.event_handler("on_client_connected")
-    async def on_client_connected(transport, client):
-        # Kick off the conversation.
-        messages.append({"role": "system", "content": "Please introduce yourself to the user."})
-        await task.queue_frames([context_aggregator.user().get_context_frame()])
+        pipeline = Pipeline(
+            [
+                transport.input(),  # Websocket input from client
+                stt,  # Speech-To-Text
+                context_aggregator.user(),
+                llm,  # LLM
+                tts,  # Text-To-Speech
+                transport.output(),  # Websocket output to client
+                tl,
+                context_aggregator.assistant(),
+            ]
+        )
 
-    @transport.event_handler("on_session_timeout")
-    async def on_session_timeout(transport, client):
-        logger.info(f"Entering in timeout for {client.remote_address}")
+        task = PipelineTask(pipeline, params=PipelineParams(allow_interruptions=True))
 
-        timeout_handler = SessionTimeoutHandler(task, tts)
+        @transport.event_handler("on_client_connected")
+        async def on_client_connected(transport, client):
+            # Kick off the conversation.
+            messages.append({"role": "system", "content": "Please introduce yourself to the user."})
+            await task.queue_frames([context_aggregator.user().get_context_frame()])
 
-        await timeout_handler.handle_timeout(client)
+        @transport.event_handler("on_session_timeout")
+        async def on_session_timeout(transport, client):
+            logger.info(f"Entering in timeout for {client.remote_address}")
 
-    runner = PipelineRunner()
+            timeout_handler = SessionTimeoutHandler(task, tts)
 
-    await runner.run(task)
+            await timeout_handler.handle_timeout(client)
+
+        runner = PipelineRunner()
+
+        await runner.run(task)
 
 
 if __name__ == "__main__":
