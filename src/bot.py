@@ -18,7 +18,6 @@ from pipecat.pipeline.runner import PipelineRunner
 from pipecat.pipeline.task import PipelineParams, PipelineTask
 from pipecat.processors.aggregators.openai_llm_context import OpenAILLMContext
 from pipecat.serializers.protobuf import ProtobufFrameSerializer
-# from pipecat.services.xtts import XTTSService
 from pipecat.services.whisper import WhisperSTTService, Model
 from pipecat.services.openai import OpenAILLMService
 from pipecat.services.ollama import OLLamaLLMService
@@ -38,6 +37,8 @@ from pipecat.frames.frames import (
 # custom services
 import aiohttp
 from pipecat_service.tts_service import StyleTTS2Service
+from pipecat_service.fastapi_service import FastAPIService
+
 
 class TranscriptionLogger(FrameProcessor):
 
@@ -125,20 +126,16 @@ async def main():
         )
 
         # llm = OpenAILLMService(api_key=os.getenv("OPENAI_API_KEY"), model="gpt-4o")
-        llm = OLLamaLLMService(model="llama3.3:70b", base_url="http://localhost:5005/v1")
+        # llm = OLLamaLLMService(model="llama3.3:70b", base_url="http://localhost:5005/v1")
+        llm = FastAPIService(model="ollama", base_url="http://localhost:8080")
 
         # stt = DeepgramSTTService(api_key=os.getenv("DEEPGRAM_API_KEY"))
         stt = WhisperSTTService(
+            # TODO: 마이크에 음성이 들어가지 않을 때, 지속적으로 "Okay", "I'm" 등
+            # 스트림이 흘러들어가는 문제가 있음
             model=Model.DISTIL_MEDIUM_EN,
             audio_passthrough=True
-            )
-
-        # tts = XTTSService(
-        #     voice_id="speaker_1",
-        #     language=Language.EN,
-        #     base_url="http://localhost:5006",
-        #     aiohttp_session=session,
-        # )
+        )
 
         tts = StyleTTS2Service(
             base_url='http://localhost:8014',
